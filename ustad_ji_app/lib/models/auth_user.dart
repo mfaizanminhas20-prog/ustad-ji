@@ -48,4 +48,14 @@ class AuthUser {
         totalJobs: m['totalJobs'] ?? 0,
         createdAt: DateTime.tryParse(m['createdAt'] ?? '') ?? DateTime.now(),
       );
+
+  Map<String, dynamic> toApiMap() => {
+        'uid': uid,
+        'full_name': fullName,
+        'email': email,
+        'phone': phone,
+        'role': role,
+        'skill': skill,
+        'city': city,
+      };
 }

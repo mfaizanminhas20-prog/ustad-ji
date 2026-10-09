@@ -3,7 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../services/session_service.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
-import 'auth/welcome_screen.dart';
+import 'auth/login_screen.dart';
 import 'customer/home_screen.dart';
 import 'worker/worker_dashboard.dart';
 
@@ -37,7 +37,7 @@ class _SplashScreenState extends State<SplashScreen> {
           ? const WorkerDashboard()
           : const CustomerHomeScreen();
     } else {
-      next = const WelcomeScreen();
+      next = const LoginScreen();
     }
 
     Navigator.of(context).pushReplacement(
@@ -63,13 +63,6 @@ class _SplashScreenState extends State<SplashScreen> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(30),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.15),
-                    blurRadius: 40,
-                    offset: const Offset(0, 20),
-                  ),
-                ],
               ),
               child: const Icon(Icons.handyman,
                   size: 60, color: AppColors.primary),
