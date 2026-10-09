@@ -1,9 +1,9 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import '../theme/app_theme.dart';
+import '../services/session_service.dart';
 import '../state/app_state.dart';
-import 'onboarding_screen.dart';
-import 'auth/login_screen.dart';
+import '../theme/app_theme.dart';
+import 'auth/welcome_screen.dart';
 import 'customer/home_screen.dart';
 import 'worker/worker_dashboard.dart';
 
@@ -18,22 +18,26 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    _navigate();
+    _go();
   }
 
-  Future<void> _navigate() async {
-    await Future.delayed(const Duration(milliseconds: 1800));
+  Future<void> _go() async {
+    await Future.delayed(const Duration(milliseconds: 1600));
+
+    final savedUser = await SessionService.load();
+    if (savedUser != null) {
+      appState.login(savedUser);
+    }
+
     if (!mounted) return;
 
     Widget next;
-    if (!appState.onboarded) {
-      next = const OnboardingScreen();
-    } else if (!appState.isLoggedIn) {
-      next = const LoginScreen();
-    } else if (appState.isWorker) {
-      next = const WorkerDashboard();
+    if (savedUser != null) {
+      next = savedUser.role == 'worker'
+          ? const WorkerDashboard()
+          : const CustomerHomeScreen();
     } else {
-      next = const CustomerHomeScreen();
+      next = const WelcomeScreen();
     }
 
     Navigator.of(context).pushReplacement(
@@ -61,7 +65,7 @@ class _SplashScreenState extends State<SplashScreen> {
                 borderRadius: BorderRadius.circular(30),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
+                    color: Colors.black.withValues(alpha: 0.15),
                     blurRadius: 40,
                     offset: const Offset(0, 20),
                   ),
@@ -87,7 +91,7 @@ class _SplashScreenState extends State<SplashScreen> {
             Text(
               'Trusted help, on demand.',
               style: TextStyle(
-                color: Colors.white.withOpacity(0.9),
+                color: Colors.white.withValues(alpha: 0.9),
                 fontSize: 14.5,
                 fontWeight: FontWeight.w500,
               ),

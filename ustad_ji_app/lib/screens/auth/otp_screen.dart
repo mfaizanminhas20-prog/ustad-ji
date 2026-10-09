@@ -1,26 +1,26 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import '../../services/auth_service.dart';
+import '../../services/phone_auth_service.dart';
 import '../../services/session_service.dart';
-import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
-import '../customer/home_screen.dart';
-import '../worker/worker_dashboard.dart';
+import '../../widgets/otp_box.dart';
+import 'profile_setup_screen.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phone;
   final String role;
-  final String fullName;
-  final String email;
+  final String? verificationId;
+  final String? simulatedCode;
+  final bool autoVerified;
 
   const OtpScreen({
     super.key,
     required this.phone,
     required this.role,
-    required this.fullName,
-    required this.email,
+    this.verificationId,
+    this.simulatedCode,
+    this.autoVerified = false,
   });
 
   @override
@@ -28,20 +28,32 @@ class OtpScreen extends StatefulWidget {
 }
 
 class _OtpScreenState extends State<OtpScreen> {
-  final _otp = TextEditingController();
+  final _otpKey = GlobalKey<OtpBoxState>();
   bool _loading = false;
   String? _error;
   int _countdown = 60;
   Timer? _timer;
+  String? _code;
 
   @override
   void initState() {
     super.initState();
     _startCountdown();
+
+    // On Web/Desktop, show simulated SMS banner
+    if (widget.simulatedCode != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _showSmsBanner(widget.simulatedCode!);
+        // Auto-fill after 1.2s to simulate SMS autofill
+        Future.delayed(const Duration(milliseconds: 1200), () {
+          if (mounted) _code = widget.simulatedCode;
+        });
+      });
+    }
   }
 
   void _startCountdown() {
-    setState(() => _countdown = 60);
+    _countdown = 60;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) return;
@@ -50,37 +62,68 @@ class _OtpScreenState extends State<OtpScreen> {
     });
   }
 
-  Future<void> _resend() async {
-    final code = await AuthService.resendOtp(widget.phone);
-    if (!mounted || code == null) return;
-    _startCountdown();
+  void _showSmsBanner(String code) {
     final messenger = ScaffoldMessenger.of(context);
     messenger.clearSnackBars();
     messenger.showSnackBar(
       SnackBar(
         content: Row(
           children: [
-            const Icon(Icons.sms, color: Colors.white, size: 20),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.sms, color: Colors.white, size: 20),
+            ),
             const SizedBox(width: 12),
             Expanded(
-              child: Text(
-                'New SMS - Your code is $code',
-                style: const TextStyle(
-                    color: Colors.white, fontWeight: FontWeight.w600),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'New SMS - Ustad Ji',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Your code is $code. Do not share.',
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                  ),
+                ],
               ),
             ),
           ],
         ),
         backgroundColor: const Color(0xFF1F242E),
-        duration: const Duration(seconds: 10),
+        duration: const Duration(seconds: 12),
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
+  Future<void> _resend() async {
+    final result = await PhoneAuthService.sendOtp(widget.phone);
+    if (!mounted) return;
+    if (result.success) {
+      _startCountdown();
+      if (result.simulatedCode != null) {
+        setState(() => _code = result.simulatedCode);
+        _showSmsBanner(result.simulatedCode!);
+      }
+    }
+  }
+
   Future<void> _verify() async {
-    FocusScope.of(context).unfocus();
-    if (_otp.text.trim().length != 6) {
+    final code = _otpKey.currentState?.value ?? '';
+    if (code.length != 6) {
       setState(() => _error = 'Enter the 6-digit code.');
       return;
     }
@@ -89,41 +132,33 @@ class _OtpScreenState extends State<OtpScreen> {
       _error = null;
     });
 
-    final ok = await AuthService.verifyOtp(widget.phone, _otp.text.trim());
-    if (!ok) {
-      setState(() {
-        _loading = false;
-        _error = 'Invalid or expired code.';
-      });
-      return;
-    }
-
-    final user = await AuthService.getUserByPhone(widget.phone);
-    if (user == null) {
-      setState(() {
-        _loading = false;
-        _error = 'Account not found. Please sign up again.';
-      });
-      return;
-    }
-
-    await SessionService.save(user);
-    appState.login(user);
+    final result = await PhoneAuthService.verify(
+      phone: widget.phone,
+      code: code,
+      verificationId: widget.verificationId,
+    );
 
     if (!mounted) return;
-    Navigator.of(context).pushAndRemoveUntil(
+    setState(() => _loading = false);
+
+    if (!result.success) {
+      setState(() => _error = result.error ?? 'Verification failed.');
+      _otpKey.currentState?.clear();
+      return;
+    }
+
+    await SessionService.savePending(phone: widget.phone);
+
+    if (!mounted) return;
+    Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => user.role == 'worker'
-            ? const WorkerDashboard()
-            : const CustomerHomeScreen(),
+        builder: (_) => ProfileSetupScreen(role: widget.role),
       ),
-      (route) => false,
     );
   }
 
   @override
   void dispose() {
-    _otp.dispose();
     _timer?.cancel();
     super.dispose();
   }
@@ -150,16 +185,6 @@ class _OtpScreenState extends State<OtpScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-                child: const Icon(Icons.sms_outlined,
-                    color: AppColors.primary, size: 32),
-              ),
-              const SizedBox(height: 24),
               const Text(
                 'Verify your number',
                 style: TextStyle(
@@ -171,53 +196,31 @@ class _OtpScreenState extends State<OtpScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                'We sent a 6-digit code to $masked. Enter it below.',
+                'We sent a 6-digit code to $masked.',
                 style: const TextStyle(
                   fontSize: 14.5,
                   color: AppColors.textSecondary,
-                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: const Text(
+                  'Change number',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
               const SizedBox(height: 30),
 
-              TextField(
-                controller: _otp,
-                keyboardType: TextInputType.number,
-                maxLength: 6,
-                textAlign: TextAlign.center,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 12,
-                ),
-                decoration: InputDecoration(
-                  counterText: '',
-                  hintText: '------',
-                  hintStyle: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textSecondary.withValues(alpha: 0.4),
-                    letterSpacing: 12,
-                  ),
-                  filled: true,
-                  fillColor: AppColors.bg,
-                  contentPadding:
-                      const EdgeInsets.symmetric(vertical: 20),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    borderSide:
-                        const BorderSide(color: AppColors.primary, width: 2),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
+              OtpBox(key: _otpKey, onCompleted: (_) => _verify()),
 
-              if (_error != null) ...[
+              const SizedBox(height: 24),
+
+              if (_error != null)
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
@@ -241,8 +244,7 @@ class _OtpScreenState extends State<OtpScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
-              ],
+              if (_error != null) const SizedBox(height: 16),
 
               GradientButton(
                 label: 'Verify & Continue',
@@ -257,7 +259,7 @@ class _OtpScreenState extends State<OtpScreen> {
                   onPressed: _countdown > 0 ? null : _resend,
                   child: Text(
                     _countdown > 0
-                        ? 'Resend code in ${_countdown}s'
+                        ? 'Resend in ${_countdown}s'
                         : 'Resend Code',
                     style: TextStyle(
                       color: _countdown > 0
@@ -268,6 +270,32 @@ class _OtpScreenState extends State<OtpScreen> {
                   ),
                 ),
               ),
+
+              if (widget.simulatedCode != null) ...[
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(AppRadius.sm),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline,
+                          color: AppColors.warning, size: 16),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Demo mode: On Android you get real SMS. On Web the code is ${widget.simulatedCode}.',
+                          style: const TextStyle(
+                              fontSize: 11.5,
+                              color: AppColors.textSecondary),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ],
           ),
         ),

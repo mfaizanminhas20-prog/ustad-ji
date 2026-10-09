@@ -252,4 +252,27 @@ class AuthService {
     'What is your favourite dish?',
     'What was your childhood nickname?',
   ];
+
+  // Used by the new wizard — creates a phone-only account with defaults.
+  static Future<AuthResult> signupWithPhone({
+    required String fullName,
+    required String phone,
+    required String role,
+    String? skill,
+    String city = 'Lahore',
+  }) async {
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final email = '${role}_$stamp@ustadji.phone';
+    return signup(
+      fullName: fullName,
+      email: email,
+      phone: phone,
+      password: 'PhoneUser@$stamp',
+      role: role,
+      skill: skill,
+      city: city,
+      securityQuestion: 'What city were you born in?',
+      securityAnswer: city,
+    );
+  }
 }
