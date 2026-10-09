@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../services/auth_service.dart';
+import '../../services/session_service.dart';
 import '../../state/app_state.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/gradient_button.dart';
-import '../../widgets/primary_text_field.dart';
 import '../customer/home_screen.dart';
 import '../worker/worker_dashboard.dart';
+import 'forgot_password_screen.dart';
+import 'signup_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -16,116 +18,38 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _phone = TextEditingController();
-  final _otp = TextEditingController();
-  final _name = TextEditingController();
-  String _role = 'customer';
-  bool _otpSent = false;
+  final _id = TextEditingController();
+  final _pwd = TextEditingController();
   bool _loading = false;
+  bool _obscure = true;
   String? _error;
 
-  Future<void> _sendOtp() async {
+  Future<void> _login() async {
     FocusScope.of(context).unfocus();
     setState(() {
       _loading = true;
       _error = null;
     });
-    final code = await AuthService.sendOtp(_phone.text.trim());
-    if (!mounted) return;
-    setState(() => _loading = false);
 
-    if (code == null) {
-      setState(() => _error = 'Please enter a valid phone number.');
+    final result = await AuthService.login(
+      identifier: _id.text,
+      password: _pwd.text,
+    );
+
+    if (!result.success) {
+      setState(() {
+        _loading = false;
+        _error = result.error;
+      });
       return;
     }
 
-    setState(() {
-      _otpSent = true;
-      _otp.text = '';
-    });
+    await SessionService.save(result.user!);
+    appState.login(result.user!);
 
-    _showSmsBanner(code);
-
-    Future.delayed(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
-      setState(() => _otp.text = code);
-    });
-  }
-
-  void _showSmsBanner(String code) {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.clearSnackBars();
-    messenger.showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Icon(Icons.sms, color: Colors.white, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'New SMS - Ustad Ji',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'Your code is $code. Do not share.',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        backgroundColor: const Color(0xFF1F242E),
-        duration: const Duration(seconds: 6),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  Future<void> _verify() async {
-    FocusScope.of(context).unfocus();
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    final user = await AuthService.verifyOtp(
-      phone: _phone.text.trim(),
-      code: _otp.text.trim(),
-      role: _role,
-      name: _name.text.trim().isEmpty
-          ? (_role == 'worker' ? 'Ali AC Services' : 'Guest User')
-          : _name.text.trim(),
-      skill: _role == 'worker' ? 'AC Repair' : null,
-    );
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    if (user == null) {
-      setState(() => _error = 'Enter a 4-digit code.');
-      return;
-    }
-
-    appState.login(user);
     if (!mounted) return;
     Navigator.of(context).pushReplacement(MaterialPageRoute(
-      builder: (_) => user.role == 'worker'
+      builder: (_) => result.user!.role == 'worker'
           ? const WorkerDashboard()
           : const CustomerHomeScreen(),
     ));
@@ -133,9 +57,8 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
-    _phone.dispose();
-    _otp.dispose();
-    _name.dispose();
+    _id.dispose();
+    _pwd.dispose();
     super.dispose();
   }
 
@@ -150,97 +73,107 @@ class _LoginScreenState extends State<LoginScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const SizedBox(height: 20),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(AppRadius.md),
-                ),
-                child: const Icon(Icons.handyman,
-                    color: AppColors.primary, size: 32),
-              )
-                  .animate()
-                  .fadeIn(duration: 400.ms)
-                  .scale(begin: const Offset(0.6, 0.6)),
-              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: AppGradients.green,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.handyman,
+                        color: Colors.white, size: 24),
+                  ),
+                  const SizedBox(width: 10),
+                  const Text(
+                    'Ustad Ji',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ).animate().fadeIn(duration: 400.ms),
+              const SizedBox(height: 32),
               const Text(
-                'Welcome to Ustad Ji',
+                'Welcome back',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
                   letterSpacing: -0.5,
                 ),
-              ).animate().fadeIn(delay: 100.ms).slideY(begin: 0.2),
-              const SizedBox(height: 8),
+              ).animate().fadeIn(delay: 100.ms),
+              const SizedBox(height: 6),
               const Text(
-                'Sign in to book a trusted ustad or start accepting jobs.',
+                'Sign in with your email or Pakistani phone number.',
                 style: TextStyle(
                   fontSize: 14.5,
                   color: AppColors.textSecondary,
-                  height: 1.5,
                 ),
-              ).animate().fadeIn(delay: 200.ms),
-              const SizedBox(height: 30),
+              ).animate().fadeIn(delay: 150.ms),
+              const SizedBox(height: 32),
 
-              PrimaryTextField(
-                controller: _name,
-                label: 'Your name (optional)',
-                hint: 'e.g. Ahmed Khan',
-                prefixIcon: Icons.person_outline,
-              ),
-              const SizedBox(height: 16),
-
-              PrimaryTextField(
-                controller: _phone,
-                label: 'Phone number',
-                hint: '03XX-XXXXXXX',
-                prefixIcon: Icons.phone_outlined,
-                keyboardType: TextInputType.phone,
-              ),
-              const SizedBox(height: 16),
-
-              if (_otpSent) ...[
-                PrimaryTextField(
-                  controller: _otp,
-                  label: 'Verification code',
-                  hint: 'Enter 4 digits',
-                  prefixIcon: Icons.lock_outline,
-                  keyboardType: TextInputType.number,
-                ),
-                const SizedBox(height: 16),
-              ],
-
-              const Text(
-                'I am a',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textPrimary,
+              TextField(
+                controller: _id,
+                keyboardType: TextInputType.emailAddress,
+                decoration: _deco(
+                  label: 'Email or phone',
+                  hint: 'you@example.com or 03001234567',
+                  icon: Icons.person_outline,
                 ),
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(
-                      child: _roleCard('customer', Icons.person, 'Customer')),
-                  const SizedBox(width: 10),
-                  Expanded(
-                      child:
-                          _roleCard('worker', Icons.engineering, 'Worker')),
-                ],
+              const SizedBox(height: 14),
+
+              TextField(
+                controller: _pwd,
+                obscureText: _obscure,
+                decoration: _deco(
+                  label: 'Password',
+                  hint: 'Enter your password',
+                  icon: Icons.lock_outline,
+                  suffix: IconButton(
+                    icon: Icon(
+                      _obscure ? Icons.visibility_off : Icons.visibility,
+                      size: 20,
+                      color: AppColors.textSecondary,
+                    ),
+                    onPressed: () => setState(() => _obscure = !_obscure),
+                  ),
+                ),
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: GestureDetector(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const ForgotPasswordScreen(),
+                    ),
+                  ),
+                  child: const Text(
+                    'Forgot password?',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
 
-              if (_error != null) ...[
+              const SizedBox(height: 22),
+
+              if (_error != null)
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: AppColors.danger.withOpacity(0.08),
+                    color: AppColors.danger.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(AppRadius.sm),
-                    border:
-                        Border.all(color: AppColors.danger.withOpacity(0.25)),
+                    border: Border.all(
+                        color: AppColors.danger.withValues(alpha: 0.25)),
                   ),
                   child: Row(
                     children: [
@@ -256,28 +189,63 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-              ],
+                ).animate().fadeIn().shakeX(),
+
+              if (_error != null) const SizedBox(height: 14),
 
               GradientButton(
-                label: _otpSent ? 'Verify & Continue' : 'Send Code',
-                icon: _otpSent ? Icons.check : Icons.sms_outlined,
+                label: 'Log In',
+                icon: Icons.login,
                 loading: _loading,
-                onPressed: _otpSent ? _verify : _sendOtp,
+                onPressed: _login,
+              ),
+
+              const SizedBox(height: 24),
+
+              Row(
+                children: const [
+                  Expanded(child: Divider()),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text(
+                      'OR',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textSecondary,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: Divider()),
+                ],
               ),
 
               const SizedBox(height: 20),
-              Center(
-                child: Text(
-                  'Demo mode: any 4-digit code works',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: AppColors.textSecondary.withOpacity(0.8),
+
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const SignupScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.person_add_alt, size: 18),
+                  label: const Text('Create New Account'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.primary,
+                    side: BorderSide(
+                        color: AppColors.primary.withValues(alpha: 0.3)),
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.sm),
+                    ),
                   ),
                 ),
               ),
-              const SizedBox(height: 40),
+
+              const SizedBox(height: 30),
             ],
           ),
         ),
@@ -285,39 +253,33 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
-  Widget _roleCard(String role, IconData icon, String label) {
-    final selected = _role == role;
-    return GestureDetector(
-      onTap: () => setState(() => _role = role),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(vertical: 18),
-        decoration: BoxDecoration(
-          color: selected ? AppColors.primary.withOpacity(0.1) : AppColors.bg,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(
-            color: selected ? AppColors.primary : AppColors.border,
-            width: selected ? 1.6 : 1,
-          ),
-        ),
-        child: Column(
-          children: [
-            Icon(icon,
-                color:
-                    selected ? AppColors.primary : AppColors.textSecondary,
-                size: 26),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w700,
-                color:
-                    selected ? AppColors.primary : AppColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
+  InputDecoration _deco({
+    required String label,
+    required String hint,
+    required IconData icon,
+    Widget? suffix,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      labelStyle: const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+          color: AppColors.textPrimary),
+      hintStyle: const TextStyle(color: AppColors.textSecondary),
+      prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 20),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: AppColors.bg,
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderSide: BorderSide.none,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(AppRadius.sm),
+        borderSide: const BorderSide(color: AppColors.primary, width: 1.6),
       ),
     );
   }
