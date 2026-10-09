@@ -55,6 +55,63 @@ class _LoginScreenState extends State<LoginScreen> {
     ));
   }
 
+  Future<void> _guest({required bool asWorker}) async {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+    final email = asWorker
+        ? 'worker_$stamp@ustadji.app'
+        : 'customer_$stamp@ustadji.app';
+    final phone = asWorker ? '03009990001' : '03009990002';
+    final name = asWorker ? 'Demo Worker' : 'Demo Customer';
+
+    final result = await AuthService.signup(
+      fullName: name,
+      email: email,
+      phone: phone,
+      password: 'Demo@1234',
+      role: asWorker ? 'worker' : 'customer',
+      skill: asWorker ? 'AC Repair' : null,
+      securityQuestion: 'What city were you born in?',
+      securityAnswer: 'Lahore',
+    );
+
+    if (!result.success) {
+      final fb = await AuthService.login(
+          identifier: email, password: 'Demo@1234');
+      if (fb.success) {
+        await SessionService.save(fb.user!);
+        appState.login(fb.user!);
+        if (!mounted) return;
+        Navigator.of(context).pushReplacement(MaterialPageRoute(
+          builder: (_) => asWorker
+              ? const WorkerDashboard()
+              : const CustomerHomeScreen(),
+        ));
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = result.error;
+      });
+      return;
+    }
+
+    await SessionService.save(result.user!);
+    appState.login(result.user!);
+
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(MaterialPageRoute(
+      builder: (_) => asWorker
+          ? const WorkerDashboard()
+          : const CustomerHomeScreen(),
+    ));
+  }
+
   @override
   void dispose() {
     _id.dispose();
@@ -208,7 +265,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Padding(
                     padding: EdgeInsets.symmetric(horizontal: 12),
                     child: Text(
-                      'OR',
+                      'OR CONTINUE WITH',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -218,6 +275,30 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   Expanded(child: Divider()),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: _socialBtn(
+                      icon: Icons.person,
+                      label: 'Guest',
+                      color: AppColors.info,
+                      onTap: () => _guest(asWorker: false),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _socialBtn(
+                      icon: Icons.engineering,
+                      label: 'Demo Worker',
+                      color: AppColors.accent,
+                      onTap: () => _guest(asWorker: true),
+                    ),
+                  ),
                 ],
               ),
 
@@ -248,6 +329,40 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 30),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _socialBtn({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: _loading ? null : onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(AppRadius.sm),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: color, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
         ),
       ),
     );
